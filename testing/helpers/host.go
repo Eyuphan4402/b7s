@@ -6,10 +6,20 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blocklessnetwork/b7s/host"
 )
+
+func NewLoopbackHost(t *testing.T, log zerolog.Logger) *host.Host {
+	t.Helper()
+
+	host, err := host.New(log, loopback, 0)
+	require.NoError(t, err)
+
+	return host
+}
 
 func HostGetAddrInfo(t *testing.T, host *host.Host) *peer.AddrInfo {
 
