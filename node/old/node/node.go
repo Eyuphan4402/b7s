@@ -1,7 +1,6 @@
 package node
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/armon/go-metrics"
@@ -50,40 +49,4 @@ type Node struct {
 	// Telemetry
 	tracer  *tracing.Tracer
 	metrics *metrics.Metrics
-}
-
-// New creates a new Node.
-func New(log zerolog.Logger, host *host.Host, store blockless.PeerStore, fstore FStore, options ...Option) (*Node, error) {
-
-	n := &Node{
-		cfg: cfg,
-
-		log:      log,
-		host:     host,
-		fstore:   fstore,
-		executor: cfg.Execute,
-
-		wg:        &sync.WaitGroup{},
-		sema:      make(chan struct{}, cfg.Concurrency),
-		subgroups: subgroups,
-
-		rollCall:           newQueue(rollCallQueueBufferSize),
-		clusters:           make(map[string]consensusExecutor),
-		executeResponses:   waitmap.New[string, execute.ResultMap](executionResultCacheSize),
-		consensusResponses: waitmap.New[string, response.FormCluster](0),
-
-		tracer:  tracing.NewTracer(tracerName),
-		metrics: metrics.Default(),
-	}
-
-	err := n.ValidateConfig()
-	if err != nil {
-		return nil, fmt.Errorf("node configuration is not valid: %w", err)
-	}
-
-	// Create a notifiee with a backing store.
-	cn := newConnectionNotifee(log, store)
-	host.Network().Notify(cn)
-
-	return n, nil
 }

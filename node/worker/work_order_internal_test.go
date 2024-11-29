@@ -11,6 +11,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
+	"github.com/blocklessnetwork/b7s/consensus"
 	"github.com/blocklessnetwork/b7s/models/blockless"
 	"github.com/blocklessnetwork/b7s/models/codes"
 	"github.com/blocklessnetwork/b7s/models/execute"
@@ -141,6 +142,39 @@ func TestWorker_ProcessWorkOrder_Metadata(t *testing.T) {
 
 func TestWorker_ProcessWorkOrder_HandlesErrors(t *testing.T) {
 
+	t.Run("function lookup error", func(t *testing.T) {
+
+		var (
+			req = request.WorkOrder{
+				RequestID: "request-id",
+				Request:   mocks.GenericExecutionRequest,
+			}
+		)
+
+		worker := createWorkerNode(t)
+
+		fstore := mocks.BaselineFStore(t)
+		fstore.IsInstalledFunc = func(string) (bool, error) {
+			return false, nil
+		}
+		worker.fstore = fstore
+
+		// Override Send function to verify that the result it is passed to it is what the executor returned, and it was sent despite an execution error.
+		core := mocks.BaselineNodeCore(t)
+		core.SendFunc = func(_ context.Context, _ peer.ID, msg blockless.Message) error {
+			er, ok := any(msg).(*response.WorkOrder)
+			require.True(t, ok)
+
+			require.Equal(t, codes.NotFound, er.Result)
+			require.Empty(t, er.Result.Result.Result) // RuntimeOutput
+			require.Empty(t, er.Result.Result.Usage)
+
+			return nil
+		}
+
+		err := worker.processWorkOrder(context.Background(), mocks.GenericPeerID, req)
+		require.NoError(t, err)
+	})
 	t.Run("request ID missing", func(t *testing.T) {
 
 		var (
@@ -223,6 +257,35 @@ func TestWorker_ProcessWorkOrder_HandlesErrors(t *testing.T) {
 
 			return nil
 		}
+
+		err := worker.processWorkOrder(context.Background(), mocks.GenericPeerID, req)
+		require.NoError(t, err)
+	})
+	t.Run("consensus required but no cluster", func(t *testing.T) {
+
+		var (
+			req = request.WorkOrder{
+				RequestID: "request-id",
+				Request:   mocks.GenericExecutionRequest,
+			}
+		)
+
+		req.Config.ConsensusAlgorithm = consensus.Raft.String()
+
+		worker := createWorkerNode(t)
+
+		core := mocks.BaselineNodeCore(t)
+		core.SendFunc = func(_ context.Context, _ peer.ID, msg blockless.Message) error {
+			er, ok := any(msg).(*response.WorkOrder)
+			require.True(t, ok)
+
+			require.Equal(t, codes.Error, er.Code)
+			require.Empty(t, er.Result.Result.Result) // RuntimeOutput
+			require.Empty(t, er.Result.Result.Usage)
+
+			return nil
+		}
+		worker.Core = core
 
 		err := worker.processWorkOrder(context.Background(), mocks.GenericPeerID, req)
 		require.NoError(t, err)
