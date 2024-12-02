@@ -47,15 +47,18 @@ func BaselineNodeCore(t *testing.T) *NodeCore {
 	mh, err := telemetry.CreateMetrics(sink, false)
 	require.NoError(t, err)
 
+	libp2phost, err := host.New(NoopLogger, loopback, 0)
+	require.NoError(t, err)
+
 	core := NodeCore{
 		IDFunc: func() string {
-			return ""
+			return libp2phost.ID().String()
 		},
 		LogFunc: func() *zerolog.Logger {
 			return &NoopLogger
 		},
 		HostFunc: func() *host.Host {
-			return nil
+			return libp2phost
 		},
 		ConnectedFunc: func(peer.ID) bool {
 			return false

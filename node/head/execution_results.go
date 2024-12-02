@@ -43,8 +43,8 @@ func (h *HeadNode) gatherExecutionResultsPBFT(ctx context.Context, requestID str
 		go func(sender peer.ID) {
 			defer wg.Done()
 
-			key := executionResultKey(requestID, sender)
-			res, ok := h.executeResponses.WaitFor(exctx, key)
+			key := peerRequestKey(requestID, sender)
+			res, ok := h.workOrderResponses.WaitFor(exctx, key)
 			if !ok {
 				return
 			}
@@ -127,8 +127,8 @@ func (h *HeadNode) gatherExecutionResults(ctx context.Context, requestID string,
 
 		go func(peer peer.ID) {
 			defer wg.Done()
-			key := executionResultKey(requestID, peer)
-			res, ok := h.executeResponses.WaitFor(exctx, key)
+			key := peerRequestKey(requestID, peer)
+			res, ok := h.workOrderResponses.WaitFor(exctx, key)
 			if !ok {
 				return
 			}

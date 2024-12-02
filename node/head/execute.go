@@ -131,6 +131,7 @@ func (h *HeadNode) execute(ctx context.Context, requestID string, req execute.Re
 	// Phase 3. - Request execution.
 
 	// Send the work order to peers in the cluster. Non-leaders will drop the request.
+	// TODO: WorkerOrder request should be created from request.Execute
 	reqExecute := request.WorkOrder{
 		Request:   req,
 		RequestID: requestID,
@@ -198,8 +199,8 @@ func (h *HeadNode) processWorkOrderResponse(ctx context.Context, from peer.ID, r
 		Str("request", res.RequestID).
 		Msg("received work order response")
 
-	key := executionResultKey(res.RequestID, from)
-	h.executeResponses.Set(key, res.Result)
+	key := peerRequestKey(res.RequestID, from)
+	h.workOrderResponses.Set(key, res.Result)
 
 	return nil
 }
@@ -213,7 +214,7 @@ func determineThreshold(req execute.Request) float64 {
 	return defaultExecutionThreshold
 }
 
-func executionResultKey(requestID string, peer peer.ID) string {
+func peerRequestKey(requestID string, peer peer.ID) string {
 	return requestID + "/" + peer.String()
 }
 

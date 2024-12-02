@@ -12,6 +12,10 @@ import (
 	"github.com/blocklessnetwork/b7s/host"
 )
 
+const (
+	loopback = "127.0.0.1"
+)
+
 func NewLoopbackHost(t *testing.T, log zerolog.Logger) *host.Host {
 	t.Helper()
 
