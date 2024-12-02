@@ -1,17 +1,18 @@
 //go:build integration
 // +build integration
 
-package node_test
+package node
 
 import (
 	"context"
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/hashicorp/go-multierror"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
@@ -21,6 +22,7 @@ import (
 	"github.com/blocklessnetwork/b7s/models/blockless"
 	"github.com/blocklessnetwork/b7s/models/codes"
 	"github.com/blocklessnetwork/b7s/models/response"
+	"github.com/blocklessnetwork/b7s/testing/helpers"
 )
 
 func TestNode_PBFT_ExecuteComplete(t *testing.T) {
@@ -46,8 +48,7 @@ This is the end of my program
 
 	var (
 		cleanupDisabled   = cleanupDisabled()
-		verifiedExecution bool
-		requestID         = uuid.New().String()
+		verifiedExecution atomic.Bool
 	)
 
 	t.Log("starting test")
@@ -82,7 +83,6 @@ This is the end of my program
 			}
 		}
 
-		head.db.Close()
 		head.logFile.Close()
 		if !cleanupDisabled {
 			os.RemoveAll(head.dir)
@@ -119,12 +119,12 @@ This is the end of my program
 			if j == i {
 				continue
 			}
-			hostAddNewPeer(t, client.host, nodes[i].host)
-			hostAddNewPeer(t, nodes[i].host, nodes[j].host)
-			hostAddNewPeer(t, nodes[j].host, nodes[i].host)
+			helpers.HostAddNewPeer(t, client.host, nodes[i].host)
+			helpers.HostAddNewPeer(t, nodes[i].host, nodes[j].host)
+			helpers.HostAddNewPeer(t, nodes[j].host, nodes[i].host)
 
 			// Establish a connection so that hosts disseminate topic subscription info.
-			info := hostGetAddrInfo(t, nodes[j].host)
+			info := helpers.HostGetAddrInfo(t, nodes[j].host)
 			err := nodes[i].host.Connect(ctx, *info)
 			require.NoError(t, err)
 		}
@@ -134,18 +134,14 @@ This is the end of my program
 	t.Log("starting nodes")
 
 	// We start nodes in separate goroutines.
-	var nodesWG sync.WaitGroup
-	nodesWG.Add(len(nodes))
-
+	var runErr multierror.Group
 	for _, node := range nodes {
-		go func(node *nodeScaffolding) {
-			defer nodesWG.Done()
-
+		runErr.Go(func() error {
+			// We `require` Run to not fail below so that we can scrap a test earlier if something goes wrong.
 			err := node.node.Run(ctx)
 			require.NoError(t, err)
-
-			t.Log("node stopped")
-		}(node)
+			return nil
+		})
 	}
 
 	// Add a delay for the hosts to subscribe to topics,
@@ -229,10 +225,10 @@ This is the end of my program
 
 		t.Log("client verified execution response")
 
-		verifiedExecution = true
+		verifiedExecution.Store(true)
 	})
 
-	err := client.sendExecutionMessage(ctx, head.host.ID(), requestID, cid, functionMethod, consensus.PBFT, len(workers))
+	err := client.sendExecutionMessage(ctx, head.host.ID(), cid, functionMethod, consensus.PBFT, len(workers))
 	require.NoError(t, err)
 
 	executeWG.Wait()
@@ -242,11 +238,12 @@ This is the end of my program
 	// Since we're done, we can cancel the context, leading to stopping of the nodes.
 	cancel()
 
-	nodesWG.Wait()
+	err = runErr.Wait().ErrorOrNil()
+	require.NoError(t, err)
 
 	t.Log("nodes shutdown")
 
 	t.Log("test complete")
 
-	require.True(t, verifiedExecution)
+	require.True(t, verifiedExecution.Load())
 }

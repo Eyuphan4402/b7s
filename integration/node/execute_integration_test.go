@@ -19,8 +19,6 @@ import (
 	"github.com/blocklessnetwork/b7s/models/blockless"
 	"github.com/blocklessnetwork/b7s/models/codes"
 	"github.com/blocklessnetwork/b7s/models/response"
-	"github.com/blocklessnetwork/b7s/node/head"
-	"github.com/blocklessnetwork/b7s/node/worker"
 	"github.com/blocklessnetwork/b7s/testing/helpers"
 )
 
@@ -89,14 +87,17 @@ This is the end of my program
 	t.Log("starting nodes")
 
 	var runErr multierror.Group
+	// We require Run to not fail below so that we can scrap a test earlier if something goes wrong.
 	runErr.Go(func() error {
-		node := headNode.node.(*head.HeadNode)
-		return node.Run(ctx)
+		err := headNode.node.Run(ctx)
+		require.NoError(t, err)
+		return err
 
 	})
 	runErr.Go(func() error {
-		node := workerNode.node.(*worker.Worker)
-		return node.Run(ctx)
+		err := workerNode.node.Run(ctx)
+		require.NoError(t, err)
+		return err
 	})
 
 	// Add a delay for the hosts to subscribe to topics,

@@ -45,12 +45,16 @@ const (
 	runtimeDirEnv     = "B7S_INTEG_RUNTIME_DIR"
 )
 
+type runnable interface {
+	Run(context.Context) error
+}
+
 type nodeScaffolding struct {
 	dir     string
 	db      *pebble.DB
 	host    *host.Host
 	logFile *os.File
-	node    any
+	node    runnable
 }
 
 func instantiateNode(t *testing.T, nodeDir string, role blockless.NodeRole) *nodeScaffolding {
