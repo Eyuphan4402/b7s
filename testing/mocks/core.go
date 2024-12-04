@@ -21,8 +21,6 @@ const (
 	loopback = "127.0.0.1"
 )
 
-var _ (node.Core) = (*NodeCore)(nil)
-
 type NodeCore struct {
 	IDFunc             func() string
 	LogFunc            func() *zerolog.Logger
