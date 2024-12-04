@@ -1,10 +1,9 @@
-package node
+package node_test
 
 import (
 	"context"
 	"encoding/json"
-	"math/rand"
-	"sync"
+	"math/rand/v2"
 	"testing"
 	"time"
 
@@ -14,47 +13,32 @@ import (
 
 	"github.com/blocklessnetwork/b7s/host"
 	"github.com/blocklessnetwork/b7s/models/blockless"
+	"github.com/blocklessnetwork/b7s/node"
+	"github.com/blocklessnetwork/b7s/testing/helpers"
 	"github.com/blocklessnetwork/b7s/testing/mocks"
 )
 
-func TestNode_SendMessage(t *testing.T) {
+const (
+	loopback = "127.0.0.1"
 
-	client, err := host.New(mocks.NoopLogger, loopback, 0)
-	require.NoError(t, err)
+	// It seems like a delay is needed so that the hosts exchange information about the fact
+	// that they are subscribed to the same topic. If that does not happen, node might publish
+	// a message too soon and the client might miss it. It will then wait for a published message in vain.
+	// This is the pause we make after subscribing to the topic and before publishing a message.
+	// In reality as little as 250ms is enough, but lets allow a longer time for when
+	// tests are executed in parallel or on weaker machines.
+	subscriptionDiseminationPause = 2 * time.Second
 
-	node := createNode(t, blockless.HeadNode)
-	hostAddNewPeer(t, node.host, client)
-
-	rec := newDummyRecord()
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	client.SetStreamHandler(blockless.ProtocolID, func(stream network.Stream) {
-		defer wg.Done()
-		defer stream.Close()
-
-		from := stream.Conn().RemotePeer()
-		require.Equal(t, node.host.ID(), from)
-
-		var received dummyRecord
-		getStreamPayload(t, stream, &received)
-
-		require.Equal(t, rec, received)
-	})
-
-	err = node.send(context.Background(), client.ID(), &rec)
-	require.NoError(t, err)
-
-	wg.Wait()
-}
+	// How long can the client wait for a published message before giving up.
+	publishTimeout = 10 * time.Second
+)
 
 func TestNode_Publish(t *testing.T) {
 
 	var (
 		rec   = newDummyRecord()
 		ctx   = context.Background()
-		topic = DefaultTopic
+		topic = blockless.DefaultTopic
 	)
 
 	client, err := host.New(mocks.NoopLogger, loopback, 0)
@@ -63,15 +47,17 @@ func TestNode_Publish(t *testing.T) {
 	err = client.InitPubSub(ctx)
 	require.NoError(t, err)
 
-	node := createNode(t, blockless.HeadNode)
-	hostAddNewPeer(t, node.host, client)
+	core := createNodeCore(t)
 
-	err = node.subscribeToTopics(ctx)
+	err = core.Host().InitPubSub(ctx)
+	require.NoError(t, err)
+
+	err = core.Subscribe(ctx, blockless.DefaultTopic)
 	require.NoError(t, err)
 
 	// Establish a connection between peers.
-	clientInfo := hostGetAddrInfo(t, client)
-	err = node.host.Connect(ctx, *clientInfo)
+	clientInfo := helpers.HostGetAddrInfo(t, client)
+	err = core.Host().Connect(ctx, *clientInfo)
 	require.NoError(t, err)
 
 	// Have both client and node subscribe to the same topic.
@@ -80,7 +66,7 @@ func TestNode_Publish(t *testing.T) {
 
 	time.Sleep(subscriptionDiseminationPause)
 
-	err = node.publish(ctx, &rec)
+	err = core.Publish(ctx, &rec)
 	require.NoError(t, err)
 
 	deadlineCtx, cancel := context.WithTimeout(ctx, publishTimeout)
@@ -89,7 +75,7 @@ func TestNode_Publish(t *testing.T) {
 	require.NoError(t, err)
 
 	from := msg.ReceivedFrom
-	require.Equal(t, node.host.ID(), from)
+	require.Equal(t, core.Host().ID(), from)
 	require.NotNil(t, msg.Topic)
 	require.Equal(t, topic, *msg.Topic)
 
@@ -107,32 +93,32 @@ func TestNode_SendMessageToMany(t *testing.T) {
 	client2, err := host.New(mocks.NoopLogger, loopback, 0)
 	require.NoError(t, err)
 
-	node := createNode(t, blockless.HeadNode)
-	hostAddNewPeer(t, node.host, client1)
-	hostAddNewPeer(t, node.host, client2)
+	core := createNodeCore(t)
+	helpers.HostAddNewPeer(t, core.Host(), client1)
+	helpers.HostAddNewPeer(t, core.Host(), client2)
 
 	client1.SetStreamHandler(blockless.ProtocolID, func(network.Stream) {})
 	client2.SetStreamHandler(blockless.ProtocolID, func(network.Stream) {})
 
 	// NOTE: These subtests are sequential.
 	t.Run("nominal case - sending to two online peers is ok", func(t *testing.T) {
-		err = node.sendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), true)
+		err = core.SendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), true)
 		require.NoError(t, err)
 	})
 	t.Run("peer is down with requireAll is an error", func(t *testing.T) {
 		client1.Close()
-		err = node.sendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), true)
+		err = core.SendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), true)
 		require.Error(t, err)
 	})
 	t.Run("peer is down with partial delivery is ok", func(t *testing.T) {
 		client1.Close()
-		err = node.sendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), false)
+		err = core.SendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), false)
 		require.NoError(t, err)
 	})
 	t.Run("all sends failing produces an error", func(t *testing.T) {
 		client1.Close()
 		client2.Close()
-		err = node.sendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), false)
+		err = core.SendToMany(context.Background(), []peer.ID{client1.ID(), client2.ID()}, newDummyRecord(), false)
 		require.Error(t, err)
 	})
 }
@@ -153,4 +139,13 @@ func newDummyRecord() dummyRecord {
 		Value:       rand.Uint64(),
 		Description: "dummy-description",
 	}
+}
+
+func createNodeCore(t *testing.T) node.Core {
+
+	logger := mocks.NoopLogger
+	host, err := host.New(logger, loopback, 0)
+	require.NoError(t, err)
+
+	return node.NewCore(logger, host)
 }

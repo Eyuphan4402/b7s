@@ -12,10 +12,6 @@ const (
 	spanMessageSend    = "MessageSend"
 	spanMessagePublish = "MessagePublish"
 	spanMessageProcess = "MessageProcess"
-
-	// notifiee events
-	spanPeerConnected    = "PeerConnected"
-	spanPeerDisconnected = "PeerDisconnected"
 )
 
 // Tracing span status messages.
@@ -58,6 +54,10 @@ var Counters = []prometheus.CounterDefinition{
 		Help: "Number of topic messages this node received.",
 	},
 	{
+		Name: subscriptionsMetric,
+		Help: "Number of topics this node subscribes to.",
+	},
+	{
 		Name: messagesSentMetric,
 		Help: "Number of messages sent.",
 	},
@@ -79,9 +79,11 @@ var Counters = []prometheus.CounterDefinition{
 	},
 }
 
-var Gauges = []prometheus.GaugeDefinition{
-	{
-		Name: NodeInfoMetric,
-		Help: "Information about the b7s node.",
-	},
-}
+var (
+	Gauges = []prometheus.GaugeDefinition{
+		{
+			Name: NodeInfoMetric,
+			Help: "Information about the b7s node.",
+		},
+	}
+)
