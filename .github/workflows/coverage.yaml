@@ -1,39 +1,55 @@
+name: Test and Coverage
+
 on:
   workflow_dispatch:
 
-name: Test and Coverage
 jobs:
   test:
     runs-on: ubuntu-latest
     name: test and coverage
     steps:
-      - name: Checkout
+      # Step 1: Checkout the repository
+      - name: Checkout repository
         uses: actions/checkout@v2
         with:
-          persist-credentials: false # otherwise, the token used is the GITHUB_TOKEN, instead of your personal access token.
-          fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
+          persist-credentials: false # To use the personal token instead of the GITHUB_TOKEN
+          fetch-depth: 0 # To fetch the full history, not just the latest commit
 
-      - name: Setup go
+      # Step 2: Setup Go environment
+      - name: Setup Go
         uses: actions/setup-go@v2
         with:
           go-version: "1.21.0"
 
-      - name: Run Test
+      # Step 3: Cache Go modules to speed up the build
+      - name: Cache Go modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      # Step 4: Run tests and generate coverage report
+      - name: Run Tests
         run: |
           go test ./... -covermode=count -coverprofile=coverage.out
-          go tool cover -func=coverage.out -o=coverage.out
+          go tool cover -func=coverage.out
 
-      - name: Go Coverage Badge # Pass the `coverage.out` output to this action
+      # Step 5: Generate the coverage badge
+      - name: Generate Coverage Badge
         uses: tj-actions/coverage-badge-go@v2
         with:
           filename: coverage.out
 
-      - name: Verify Changed files
+      # Step 6: Verify if `README.md` has changed
+      - name: Verify Changed Files
         uses: tj-actions/verify-changed-files@v17
         id: verify-changed-files
         with:
           files: README.md
 
+      # Step 7: Commit changes if `README.md` was updated
       - name: Commit changes
         if: steps.verify-changed-files.outputs.files_changed == 'true'
         run: |
@@ -42,9 +58,10 @@ jobs:
           git add README.md
           git commit -m "chore: Updated coverage badge."
 
+      # Step 8: Push changes to the repository
       - name: Push changes
         if: steps.verify-changed-files.outputs.files_changed == 'true'
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: ${{ github.head_ref }}
